@@ -17,14 +17,17 @@ class Stepper
     }
     void enable(bool e){writePin(ena,!e);}
     bool isEnable(){return !lastEna;}
-    void setTargetPosition(long int newPosition){targetPosition=newPosition;}
+    void setTargetPosition(long int newPosition){
+      if(abs(newPosition-currentPosition)>maxSpeedDist)return;
+      targetPosition = newPosition;
+    }
     long int getTargetPosition(){return targetPosition;}
     void setCurrentPosition(long int newPosition){currentPosition=newPosition;}
     long int getCurrentPosition(){return currentPosition;}
     void setSpeed(int newSpeed){//speed = rotations per minute
         speed = newSpeed;
         long int minInMicros = 60000000;
-        long int stepsPerMinute = (long int)400 * (long int)newSpeed;
+        long int stepsPerMinute = (long int)200 * (long int)newSpeed;
         stepInterval =  minInMicros/stepsPerMinute;
     }
     int getSpeed(){return speed;}
@@ -41,7 +44,7 @@ class Stepper
                 int absPosDiv = abs(targetPosition - currentPosition);
                 int newSpeed = absPosDiv;
                 if(absPosDiv<10)newSpeed = 10;
-                if(absPosDiv>120)newSpeed = 120;
+                if(absPosDiv>maxSpeedDist)newSpeed = maxSpeedDist;
                 setSpeed(newSpeed);
                 step(targetPosition > currentPosition);
             }  
@@ -67,6 +70,7 @@ class Stepper
     unsigned long timeOfLastStep = 0;
     long int stepInterval = 1000;//TODO: replace with some kinde of speed
     int speed = 1;
+    int maxSpeedDist = 120;
     eMODE mode = TOTARGET;
 
     void writePin(int pin,bool level){
