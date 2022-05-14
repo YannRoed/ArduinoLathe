@@ -14,12 +14,7 @@
 #define Tpositiv 5
 #define Tnegative 4
 
-bool oldTpositiv = HIGH;
-bool oldTnegative = HIGH;
-bool oldTmode = HIGH;
-bool oldEncT1 = HIGH;
-
-enum eSelected:int{eFirstSelected,eXachse,eYachse,eSpindelSpeed,eFeedSpeed,eManuelOverride,lastSelected};
+enum eSelected:int{eFirstSelected,eXachse,eYachse,eZachse,eSpindelSpeed,eFeedSpeed,eManuelOverride,lastSelected};
 enum eMode:int{eEconderUse,ePowerFeed,eMenueSelection};
  
 LiquidCrystal_I2C lcd(PCF8574_ADDR_A21_A11_A01);
@@ -28,16 +23,19 @@ LiquidCrystal_I2C lcd(PCF8574_ADDR_A21_A11_A01);
 //   Good Performance: only the first pin has interrupt capability
 //   Low Performance:  neither pin has interrupt capability
 Encoder myEnc(2, 3);
-Stepper XStepper(25,23,27);
-Stepper YStepper(31,29,33);
+Stepper XStepper(25,23,27,true);
+Stepper YStepper(37,35,39,false);
+Stepper ZStepper(31,29,33,true);
+
 
 eSelected selected = eXachse;
-eMode operateMode = eNormal;
+eMode operateMode = eEconderUse;
 int spindelSpeed = 0;
 int manuelOverride = 20;
 int feedSpeed = 10;
 long oldPosition  = 0;
 unsigned long displayUpdate = 0;
+unsigned long debounce = 0;
 
 //   avoid using pins with LEDs attached
 
@@ -85,74 +83,55 @@ void basicTest(){
 }
 
 void updateDisplay(){
-  lcd.clear();
-  lcd.home();
-  lcd.setCursor(0,0);
-  lcd.print(selected==eSpindelSpeed?"SS:":"ss:");
-  lcd.print(spindelSpeed);
-  lcd.setCursor(6,0);
-  lcd.print(selected==eFeedSpeed?"FS:":"fs:");
-  lcd.print(feedSpeed);
-  lcd.setCursor(11,0);
-  lcd.print(selected==eManuelOverride?"OV:":"ov:");
-  lcd.print(manuelOverride);
-  lcd.setCursor(1,1);
-  lcd.print(selected==eXachse?"X:":"x:");
-  lcd.print(XStepper.getTargetPosition());
-  lcd.setCursor(8,1);
-  lcd.print(selected==eYachse?"Y:":"y:");
-  lcd.print(YStepper.getTargetPosition());
+    lcd.clear();
+    lcd.home();
+    lcd.setCursor(0,0);
+    lcd.print(operateMode==eMenueSelection?"M":" ");
+    lcd.setCursor(1,0);
+    lcd.print(selected==eSpindelSpeed?"SS":"ss");
+    lcd.print(spindelSpeed);
+    lcd.setCursor(7,0);
+    lcd.print(selected==eFeedSpeed?"FS":"fs");
+    lcd.print(feedSpeed);
+    lcd.setCursor(12,0);
+    lcd.print(selected==eManuelOverride?"OV":"ov");
+    lcd.print(manuelOverride);
+    lcd.setCursor(0,1);
+    lcd.print(selected==eXachse?"X":"x");
+    lcd.print(XStepper.getTargetPosition());
+    lcd.setCursor(5,1);
+    lcd.print(selected==eYachse?"Y":"y");
+    lcd.print(YStepper.getTargetPosition());
+    lcd.setCursor(11,1);
+    lcd.print(selected==eZachse?"Z":"z");
+    lcd.print(ZStepper.getTargetPosition());
 }
 
 void menueSelection(){
-  if(!digitalRead(Tmode)){
-    myEnc.readAndReset();
-    int encOld = myEnc.read()/4;
-    while(!digitalRead(Tmode)){
-      int encNew = myEnc.read()/4;
-      if(encNew != encOld){
-        int temp = selected;
-        if(encNew > encOld){
-          temp++;
-        }else{
-          temp--;
-        }
-        if(temp <= eFirstSelected){
-          temp = lastSelected;
-          temp--;
-        }
-        if(temp >= lastSelected){
-          temp = eFirstSelected;
-          temp++;
-        }
-        selected = static_cast<eSelected>(temp);
-        encOld = encNew; 
-        updateDisplay();
-      }
+  long newPosition = myEnc.read()/4;
+  if(newPosition != oldPosition){
+    int temp = selected;
+    if(newPosition > oldPosition){
+      temp++;
+    }else{
+      temp--;
     }
-    switch(selected){
-      case eXachse:
-        myEnc.write(XStepper.getCurrentPosition()*4);
-      break;
-      case eYachse:
-        myEnc.write(YStepper.getCurrentPosition()*4);
-      break;
-      case eSpindelSpeed:
-        myEnc.write(spindelSpeed*4);
-        break;
-      case eFeedSpeed:
-        myEnc.write(feedSpeed*4);
-        break;
-      case eManuelOverride:
-        myEnc.write(manuelOverride*4);
-        break;
+    if(temp <= eFirstSelected){
+      temp = lastSelected;
+      temp--;
     }
-    oldPosition = myEnc.read()/4;
+    if(temp >= lastSelected){
+      temp = eFirstSelected;
+      temp++;
+    }
+    selected = static_cast<eSelected>(temp);
+    oldPosition = newPosition; 
+    updateDisplay();
   }
 }
 
 void encoderOperation(){
-   long newPosition = myEnc.read()/4;
+  long newPosition = myEnc.read()/4;
   if (newPosition != oldPosition) {
     switch(selected){
       case eXachse:
@@ -163,24 +142,145 @@ void encoderOperation(){
         if(oldPosition < newPosition)YStepper.setTargetPosition(YStepper.getTargetPosition()+manuelOverride);
         else YStepper.setTargetPosition(YStepper.getTargetPosition()-manuelOverride);
         break;
+      case eZachse:
+        if(oldPosition < newPosition)ZStepper.setTargetPosition(ZStepper.getTargetPosition()+manuelOverride);
+        else ZStepper.setTargetPosition(ZStepper.getTargetPosition()-manuelOverride);
+        break;
       case eSpindelSpeed:
         if(oldPosition < newPosition)spindelSpeed++;
         else spindelSpeed--;
+        if(spindelSpeed<-99)spindelSpeed=-99;
+        if(spindelSpeed>99)spindelSpeed=99;
         break;
       case eFeedSpeed:
         if(oldPosition < newPosition)feedSpeed++;
         else feedSpeed--;
         if(feedSpeed<0)feedSpeed=0;
+        if(feedSpeed>99)feedSpeed=99;
         break;
       case eManuelOverride:
         if(oldPosition < newPosition)manuelOverride++;
         else manuelOverride--;
         if(manuelOverride<0)manuelOverride=0;
+        if(manuelOverride>99)manuelOverride=99;
         break;
       default:
         Serial.println("default case should not happen");
     }
     oldPosition = newPosition;
+  }
+}
+
+void powerFeedControle(){
+  int usedSpeed = feedSpeed;
+  switch (selected)
+  {
+    case eXachse:
+      if(XStepper.getMode() == Stepper::TOTARGET)
+        XStepper.setMode(Stepper::CONTINUES);
+      break;
+    case eYachse:
+      if(YStepper.getMode() == Stepper::TOTARGET)
+        YStepper.setMode(Stepper::CONTINUES);  
+      break;
+    case eZachse:
+      if(ZStepper.getMode() == Stepper::TOTARGET)
+        ZStepper.setMode(Stepper::CONTINUES);  
+      break;
+  }
+  //speed override
+  if(!digitalRead(EncT1))usedSpeed = 100;
+  if(!digitalRead(Tnegative))usedSpeed = -usedSpeed;
+  XStepper.setSpeed(usedSpeed);
+  YStepper.setSpeed(usedSpeed);
+  ZStepper.setSpeed(usedSpeed);
+}
+
+void handleModeButton(){
+// zeroing by pressing top right button over 1 sek
+  if(digitalRead(Tmode)){
+    debounce = micros();
+  }
+ // if(!digitalRead(Tmode)){
+    if(micros()-debounce >= abs(1000000)){
+      switch(selected){
+        case eXachse:
+          XStepper.setTargetPosition(0);
+          XStepper.setCurrentPosition(0);
+          break;
+        case eYachse:
+          YStepper.setTargetPosition(0);
+          YStepper.setCurrentPosition(0);
+          break;
+        case eZachse:
+          ZStepper.setTargetPosition(0);
+          ZStepper.setCurrentPosition(0);
+          break;
+        case eSpindelSpeed:
+          spindelSpeed = 0;
+          break;
+        case eFeedSpeed:
+          feedSpeed = 0;
+          break;
+        case eManuelOverride:
+          manuelOverride=0;
+          break;
+        default:
+          Serial.println("default case should not happen");
+      }
+    }
+  //}
+  if(micros()-debounce < abs(1000000) &&micros()-debounce >= abs(50000)){
+    if(selected == eXachse)selected = eZachse;
+    else selected = eXachse;
+  }
+}
+
+void enableSelectedMotor(){
+  if(operateMode == eMenueSelection){
+    XStepper.enable(false);
+    YStepper.enable(false);
+    ZStepper.enable(false);
+    return;
+  }
+  if(selected == eXachse && !XStepper.isEnable()){
+    XStepper.enable(true);
+    YStepper.enable(false);
+    ZStepper.enable(false);
+  }
+  if(selected == eYachse && !YStepper.isEnable()){
+    XStepper.enable(false);
+    YStepper.enable(true);
+    ZStepper.enable(false);
+  }
+  if(selected == eZachse && !ZStepper.isEnable()){
+    XStepper.enable(false);
+    YStepper.enable(false);
+    ZStepper.enable(true);
+  }
+}
+
+void operationModeSwitch(){
+  //switch between encoder use and menue selected
+  if(!digitalRead(EncT1) && operateMode != ePowerFeed){
+    if(operateMode == eEconderUse){
+      operateMode = eMenueSelection;
+    }
+    else if(operateMode == eMenueSelection){
+       operateMode = eEconderUse;
+    }
+    delay(200);
+    while(!digitalRead(EncT1));
+  }
+
+//switch powerfeed to notpowerfeed from mode
+  if(operateMode == eEconderUse && (!digitalRead(Tpositiv) || !digitalRead(Tnegative))){
+    operateMode =  ePowerFeed;
+  }else if(operateMode == ePowerFeed && digitalRead(Tpositiv) && digitalRead(Tnegative)){
+    operateMode = eEconderUse;
+    XStepper.setMode(Stepper::TOTARGET);
+    YStepper.setMode(Stepper::TOTARGET);
+    ZStepper.setMode(Stepper::TOTARGET);
   }
 }
 
@@ -197,73 +297,46 @@ void setup() {
   XStepper.setMode(Stepper::TOTARGET);
   YStepper.enable(true);
   YStepper.setMode(Stepper::TOTARGET);
+  ZStepper.enable(true);
+  ZStepper.setMode(Stepper::TOTARGET);
 
   lcd.begin(COLUMS,ROWS,LCD_5x8DOTS);
   lcd.backlight();
   lcd.home();
+  operateMode = eMenueSelection;
+  updateDisplay();
+  operateMode = eEconderUse;
 }
 
 void loop() {
-  if(digitalRead(S1)){
-    XStepper.doEvents();
-    YStepper.doEvents();
-  }
 
   //basicTest();
   //return;
+  
+  XStepper.doEvents();
+  YStepper.doEvents();
+  ZStepper.doEvents();
+
+  enableSelectedMotor();
+  handleModeButton();
+  operationModeSwitch();
+
   switch (operateMode)
   {
     case eEconderUse:
-      encoderOperation
+      encoderOperation();
       break;
     case ePowerFeed:
-    
+      powerFeedControle();
       break;
     case eMenueSelection:
       menueSelection();
       break;
   }
 
-  
-
- 
-  //TODO powerfeed on button pressed
-
-
-  if(oldTnegative != digitalRead(Tnegative)){
-    oldTnegative = digitalRead(Tnegative);
-    if(digitalRead(Tnegative)){
-      YStepper.setMode(Stepper::TOTARGET);
-      Serial.println("totarget");
-    }
-    else{
-      YStepper.setSpeed(feedSpeed);
-      YStepper.setMode(Stepper::CONTINUES);
-      Serial.println("continues");
-    }
+//update display ever 500ms
+  if (micros() - displayUpdate >= abs(500000)){
+    updateDisplay();
+    displayUpdate = micros();
   }
-
-
-  //TODO zeroing by pressing top right button over 2 sek
-  //TODO rapid power feed if encoder switch is pressed durring power feed
-  //TODO go to select menue by tapping encoder taster
- 
-/*   
-  if(!digitalRead(Tmode)){
-    if(XStepper.getMode()==Stepper::CONTINUES){
-      XStepper.setMode(Stepper::TOTARGET);
-      Serial.println("toTarget");
-    }
-    else{
-       XStepper.setMode(Stepper::CONTINUES);
-       Serial.println("continues");
-    }
-    delay(200);
-    while(!digitalRead(Tmode));
-  }
-*/
-    if (micros() - displayUpdate >= abs(500000)){
-      updateDisplay();
-      displayUpdate = micros();
-    }
 }

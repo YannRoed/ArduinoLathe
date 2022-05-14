@@ -4,7 +4,7 @@ class Stepper
 {
   public:
   enum eMODE{CONTINUES,TOTARGET};
-    Stepper(int d,int e,int p){
+    Stepper(int d,int e,int p,bool invert){
       dir = d;
       ena = e;
       pul = p;
@@ -14,6 +14,7 @@ class Stepper
       digitalWrite(dir,LOW);
       digitalWrite(ena,HIGH);
       digitalWrite(pul,LOW);
+      invertDir = invert;
     }
     void enable(bool e){writePin(ena,!e);}
     bool isEnable(){return !lastEna;}
@@ -43,7 +44,7 @@ class Stepper
             if (micros() - timeOfLastStep >= abs(stepInterval)){
                 int absPosDiv = abs(targetPosition - currentPosition);
                 int newSpeed = absPosDiv;
-                if(absPosDiv<10)newSpeed = 10;
+                if(absPosDiv<minSpeed)newSpeed = minSpeed;
                 if(absPosDiv>maxSpeedDist)newSpeed = maxSpeedDist;
                 setSpeed(newSpeed);
                 step(targetPosition > currentPosition);
@@ -52,9 +53,11 @@ class Stepper
       }else{
         if(speed == 0) enable(false);
         else enable(true);
+        
         if (micros() - timeOfLastStep >= abs(stepInterval)){
             step(stepInterval > 0);
-        } 
+        }
+        targetPosition = currentPosition;
       }
     }
 
@@ -62,6 +65,7 @@ class Stepper
     int dir;
     int ena;
     int pul;
+    bool invertDir = false;
     bool lastDir = LOW;
     bool lastEna = HIGH;
     bool lastPul = LOW;
@@ -70,7 +74,8 @@ class Stepper
     unsigned long timeOfLastStep = 0;
     long int stepInterval = 1000;//TODO: replace with some kinde of speed
     int speed = 1;
-    int maxSpeedDist = 120;
+    const int maxSpeedDist = 300;
+    const int minSpeed = 30;
     eMODE mode = TOTARGET;
 
     void writePin(int pin,bool level){
@@ -92,7 +97,8 @@ class Stepper
       //manage position counting
       if(direction) currentPosition++;
       else currentPosition--;
-      writePin(dir,direction);
+      
+      writePin(dir, invertDir==false ? direction: !direction);
       oneStep();
       timeOfLastStep = micros();
 
