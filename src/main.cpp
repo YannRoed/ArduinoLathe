@@ -37,9 +37,6 @@ long oldPosition  = 0;
 unsigned long displayUpdate = 0;
 unsigned long debounce = 0;
 
-//   avoid using pins with LEDs attached
-
-
 void basicTest(){
   if(digitalRead(S1)){
     Serial.println("S1 on");
@@ -189,7 +186,7 @@ void powerFeedControle(){
       break;
   }
   //speed override
-  if(!digitalRead(EncT1))usedSpeed = 100;
+  if(!digitalRead(EncT1))usedSpeed = 350;
   if(!digitalRead(Tnegative))usedSpeed = -usedSpeed;
   XStepper.setSpeed(usedSpeed);
   YStepper.setSpeed(usedSpeed);
@@ -197,44 +194,56 @@ void powerFeedControle(){
 }
 
 void handleModeButton(){
-// zeroing by pressing top right button over 1 sek
-  if(digitalRead(Tmode)){
-    debounce = micros();
-  }
- // if(!digitalRead(Tmode)){
-    if(micros()-debounce >= abs(1000000)){
-      switch(selected){
-        case eXachse:
-          XStepper.setTargetPosition(0);
-          XStepper.setCurrentPosition(0);
-          break;
-        case eYachse:
-          YStepper.setTargetPosition(0);
-          YStepper.setCurrentPosition(0);
-          break;
-        case eZachse:
-          ZStepper.setTargetPosition(0);
-          ZStepper.setCurrentPosition(0);
-          break;
-        case eSpindelSpeed:
-          spindelSpeed = 0;
-          break;
-        case eFeedSpeed:
-          feedSpeed = 0;
-          break;
-        case eManuelOverride:
-          manuelOverride=0;
-          break;
-        default:
-          Serial.println("default case should not happen");
+// zeroing by pressing top right button (Mode) in menue mode
+//switch between Z and X by pressing Mode over 50ms
+if(!digitalRead(Tmode)){
+  unsigned long pressedTimer = abs(micros() - debounce);
+  if(pressedTimer >= 50000 && operateMode == eMenueSelection){
+    Serial.println("zeroing");
+    switch(selected){
+      case eXachse:
+        XStepper.setTargetPosition(0);
+        XStepper.setCurrentPosition(0);
+        break;
+      case eYachse:
+        YStepper.setTargetPosition(0);
+        YStepper.setCurrentPosition(0);
+        break;
+      case eZachse:
+        ZStepper.setTargetPosition(0);
+        ZStepper.setCurrentPosition(0);
+        break;
+      case eSpindelSpeed:
+        spindelSpeed = 0;
+        break;
+      case eFeedSpeed:
+        feedSpeed = 0;
+        break;
+      case eManuelOverride:
+        manuelOverride=0;
+        break;
+      default:
+        Serial.println("default case should not happen");
       }
+      updateDisplay();
+      while(!digitalRead(Tmode)){}
     }
-  //}
-  if(micros()-debounce < abs(1000000) &&micros()-debounce >= abs(50000)){
-    if(selected == eXachse)selected = eZachse;
-    else selected = eXachse;
+    if(pressedTimer >= 50000 && operateMode == eEconderUse){
+      Serial.println("switch");
+      if(selected == eXachse){
+        selected = eZachse;
+      }else{
+        selected = eXachse;
+      }
+      while(!digitalRead(Tmode)){}
+    }
+  }else{
+    debounce = micros();
+    return;
   }
 }
+
+
 
 void enableSelectedMotor(){
   if(operateMode == eMenueSelection){

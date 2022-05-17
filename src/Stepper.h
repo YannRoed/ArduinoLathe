@@ -74,7 +74,7 @@ class Stepper
     unsigned long timeOfLastStep = 0;
     long int stepInterval = 1000;//TODO: replace with some kinde of speed
     int speed = 1;
-    const int maxSpeedDist = 300;
+    const int maxSpeedDist = 350;
     const int minSpeed = 30;
     eMODE mode = TOTARGET;
 
