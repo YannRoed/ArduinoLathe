@@ -3,6 +3,9 @@
 #include <Stepper.h>
 #include <Wire.h>              //for ESP8266 use bug free i2c driver https://github.com/enjoyneering/ESP8266-I2C-Driver
 #include <LiquidCrystal_I2C.h>
+#include<avr/io.h>
+#include<avr/interrupt.h>
+#include <PID_v1.h>
 
 
 #define COLUMS 16
@@ -13,6 +16,8 @@
 #define Tmode 6
 #define Tpositiv 5
 #define Tnegative 4
+#define SpindelEnc 19
+#define SpindelPWM 8
 
 enum eSelected:int{eFirstSelected,eXachse,eYachse,eZachse,eSpindelSpeed,eFeedSpeed,eManuelOverride,lastSelected};
 enum eMode:int{eEconderUse,ePowerFeed,eMenueSelection};
@@ -28,14 +33,37 @@ Stepper YStepper(37,35,39,false);
 Stepper ZStepper(31,29,33,true);
 
 
-eSelected selected = eXachse;
+eSelected selected = eSpindelSpeed;
 eMode operateMode = eEconderUse;
-int spindelSpeed = 0;
+
+//Specify the links and initial tuning parameters
+double Setpoint, Input, PidOutput;
+double Kp=0.2, Ki=1.5, Kd=0;
+PID myPID(&Input, &PidOutput, &Setpoint, Kp, Ki, Kd, P_ON_E,DIRECT);
+
+int spindelSpeed = 250;
+float spindelCurrentSpeed = 0;
+unsigned int spindelEncoderCount = 0;
+unsigned long timeLastPid = 0;
+
 int manuelOverride = 20;
 int feedSpeed = 10;
 long oldPosition  = 0;
 unsigned long displayUpdate = 0;
 unsigned long debounce = 0;
+
+ISR (TIMER1_OVF_vect) { // Timer1 ISR
+  cli();
+  XStepper.doEvents();
+  YStepper.doEvents();
+  ZStepper.doEvents();
+  TCNT1 = 65472;//65536-64;
+  sei();
+}
+
+void SpindelEncoderInterrupt(){
+  spindelEncoderCount++;
+}
 
 void basicTest(){
   if(digitalRead(S1)){
@@ -87,15 +115,21 @@ void updateDisplay(){
     lcd.setCursor(1,0);
     lcd.print(selected==eSpindelSpeed?"SS":"ss");
     lcd.print(spindelSpeed);
-    lcd.setCursor(7,0);
-    lcd.print(selected==eFeedSpeed?"FS":"fs");
-    lcd.print(feedSpeed);
-    lcd.setCursor(12,0);
-    lcd.print(selected==eManuelOverride?"OV":"ov");
-    lcd.print(manuelOverride);
+    lcd.setCursor(6,0);
+    //lcd.print(selected==eFeedSpeed?"FS":"fs");
+    //lcd.print(feedSpeed);
+    lcd.print("op");
+    lcd.print((int)PidOutput);
+    lcd.setCursor(11,0);
+    lcd.print("cs");
+    lcd.print((int)spindelCurrentSpeed);
+    //lcd.print(selected==eManuelOverride?"OV":"ov");
+    //lcd.print(manuelOverride);
     lcd.setCursor(0,1);
-    lcd.print(selected==eXachse?"X":"x");
-    lcd.print(XStepper.getTargetPosition());
+    //lcd.print(selected==eXachse?"X":"x");
+    //lcd.print(XStepper.getTargetPosition());
+    lcd.print("c");
+    lcd.print((int)spindelEncoderCount);
     lcd.setCursor(5,1);
     lcd.print(selected==eYachse?"Y":"y");
     lcd.print(YStepper.getTargetPosition());
@@ -105,6 +139,7 @@ void updateDisplay(){
 }
 
 void menueSelection(){
+  //select the value to change when in menue mode
   long newPosition = myEnc.read()/4;
   if(newPosition != oldPosition){
     int temp = selected;
@@ -128,6 +163,7 @@ void menueSelection(){
 }
 
 void encoderOperation(){
+  //used to change values for the selected option
   long newPosition = myEnc.read()/4;
   if (newPosition != oldPosition) {
     switch(selected){
@@ -146,8 +182,9 @@ void encoderOperation(){
       case eSpindelSpeed:
         if(oldPosition < newPosition)spindelSpeed++;
         else spindelSpeed--;
-        if(spindelSpeed<-99)spindelSpeed=-99;
-        if(spindelSpeed>99)spindelSpeed=99;
+        if(spindelSpeed<0)spindelSpeed=0;
+        if(spindelSpeed>999)spindelSpeed=999;
+        Setpoint = spindelSpeed;
         break;
       case eFeedSpeed:
         if(oldPosition < newPosition)feedSpeed++;
@@ -169,6 +206,7 @@ void encoderOperation(){
 }
 
 void powerFeedControle(){
+  //constantly move the selected aches
   int usedSpeed = feedSpeed;
   switch (selected)
   {
@@ -243,9 +281,8 @@ if(!digitalRead(Tmode)){
   }
 }
 
-
-
 void enableSelectedMotor(){
+  //reduce power use and motor heating by disable not used motors
   if(operateMode == eMenueSelection){
     XStepper.enable(false);
     YStepper.enable(false);
@@ -293,6 +330,32 @@ void operationModeSwitch(){
   }
 }
 
+void spindelControle(){
+  //PID stuff for spindel controll
+
+  unsigned long timeNow = micros();
+  if(abs(timeNow-timeLastPid)>20000){ 
+    int saveCount = spindelEncoderCount;
+    int countsPerRot = 40;
+    spindelEncoderCount = 0;
+    float timeSinceLastPid = abs(timeNow-timeLastPid);
+    float roundsSinceLastPid = saveCount/countsPerRot;
+    spindelCurrentSpeed = (1000000.0/timeSinceLastPid) * roundsSinceLastPid ;
+    Input = spindelCurrentSpeed;
+    myPID.Compute();
+
+    if(digitalRead(S1)){
+      Setpoint = spindelSpeed;
+    }else{
+      Setpoint = 0;
+      PidOutput = 0;
+    }
+
+    analogWrite(SpindelPWM,PidOutput);
+    timeLastPid = timeNow;
+  }
+}
+
 void setup() {
   Serial.begin(9600);
 
@@ -301,12 +364,20 @@ void setup() {
   pinMode(Tmode,INPUT_PULLUP);
   pinMode(Tpositiv,INPUT_PULLUP);
   pinMode(Tnegative,INPUT_PULLUP);
+  pinMode(SpindelEnc,INPUT_PULLUP);
+  pinMode(SpindelPWM,OUTPUT);
 
-  XStepper.enable(true);
+  attachInterrupt(digitalPinToInterrupt(SpindelEnc), SpindelEncoderInterrupt, CHANGE);
+  myPID.SetOutputLimits(0,255);
+  myPID.SetSampleTime(20);
+  myPID.SetMode(AUTOMATIC);
+  Setpoint = spindelSpeed;
+  
+  XStepper.enable(false);
   XStepper.setMode(Stepper::TOTARGET);
-  YStepper.enable(true);
+  YStepper.enable(false);
   YStepper.setMode(Stepper::TOTARGET);
-  ZStepper.enable(true);
+  ZStepper.enable(false);
   ZStepper.setMode(Stepper::TOTARGET);
 
   lcd.begin(COLUMS,ROWS,LCD_5x8DOTS);
@@ -315,17 +386,21 @@ void setup() {
   operateMode = eMenueSelection;
   updateDisplay();
   operateMode = eEconderUse;
+
+//setup timer interrupt for stepper moto movements
+  TCNT1 = 65472;//65536-64;   // for 1 sec at 16 MHz	
+	TCCR1A = 0x00;
+	TCCR1B = (0<<CS10)|(1 << CS11)|(0<<CS12);  // Timer mode with 1024 prescler
+	TCCR1C = 0x00;
+  TIMSK1 = (1 << TOIE1) ;   // Enable timer1 overflow interrupt(TOIE1)
+  sei();
 }
 
 void loop() {
 
   //basicTest();
   //return;
-  
-  XStepper.doEvents();
-  YStepper.doEvents();
-  ZStepper.doEvents();
-
+  spindelControle();
   enableSelectedMotor();
   handleModeButton();
   operationModeSwitch();
