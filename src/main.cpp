@@ -53,12 +53,10 @@ unsigned long displayUpdate = 0;
 unsigned long debounce = 0;
 
 ISR (TIMER1_OVF_vect) { // Timer1 ISR
-  cli();
   XStepper.doEvents();
   YStepper.doEvents();
   ZStepper.doEvents();
   TCNT1 = 65472;//65536-64;
-  sei();
 }
 
 void SpindelEncoderInterrupt(){
@@ -114,7 +112,7 @@ void updateDisplay(){
     lcd.print(operateMode==eMenueSelection?"M":" ");
     lcd.setCursor(1,0);
     lcd.print(selected==eSpindelSpeed?"SS":"ss");
-    lcd.print(selected==eSpindelSpeed?spindelSpeed:spindelCurrentSpeed);
+    lcd.print(selected==eSpindelSpeed?spindelSpeed:(int)spindelCurrentSpeed);
     lcd.setCursor(6,0);
     lcd.print(selected==eFeedSpeed?"FS":"fs");
     lcd.print(feedSpeed);
@@ -231,7 +229,6 @@ void handleModeButton(){
 if(!digitalRead(Tmode)){
   unsigned long pressedTimer = abs(micros() - debounce);
   if(pressedTimer >= 50000 && operateMode == eMenueSelection){
-    Serial.println("zeroing");
     switch(selected){
       case eXachse:
         XStepper.setTargetPosition(0);
@@ -261,7 +258,6 @@ if(!digitalRead(Tmode)){
       while(!digitalRead(Tmode)){}
     }
     if(pressedTimer >= 50000 && operateMode == eEconderUse){
-      Serial.println("switch");
       if(selected == eXachse){
         selected = eZachse;
       }else{
@@ -328,7 +324,7 @@ void spindelControle(){
   //PID stuff for spindel controll
 
   unsigned long timeNow = micros();
-  if(abs(timeNow-timeLastPid)>20000){ 
+  if(abs(timeNow-timeLastPid)>50000){ 
     int saveCount = spindelEncoderCount;
     int countsPerRot = 40;
     spindelEncoderCount = 0;
@@ -363,7 +359,7 @@ void setup() {
 
   attachInterrupt(digitalPinToInterrupt(SpindelEnc), SpindelEncoderInterrupt, CHANGE);
   myPID.SetOutputLimits(0,255);
-  myPID.SetSampleTime(20);
+  myPID.SetSampleTime(50);
   myPID.SetMode(AUTOMATIC);
   Setpoint = spindelSpeed;
   
