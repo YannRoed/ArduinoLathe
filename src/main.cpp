@@ -41,7 +41,7 @@ double Setpoint, Input, PidOutput;
 double Kp=0.2, Ki=1.5, Kd=0;
 PID myPID(&Input, &PidOutput, &Setpoint, Kp, Ki, Kd, P_ON_E,DIRECT);
 
-int spindelSpeed = 250;
+int spindelSpeed = 350;
 float spindelCurrentSpeed = 0;
 unsigned int spindelEncoderCount = 0;
 unsigned long timeLastPid = 0;
@@ -52,11 +52,11 @@ long oldPosition  = 0;
 unsigned long displayUpdate = 0;
 unsigned long debounce = 0;
 
-ISR (TIMER1_OVF_vect) { // Timer1 ISR
+ISR (TIMER2_OVF_vect) { // Timer1 ISR
   XStepper.doEvents();
   YStepper.doEvents();
   ZStepper.doEvents();
-  TCNT1 = 65472;//65536-64;
+  TCNT2 = 61440;//65536-4096
 }
 
 void SpindelEncoderInterrupt(){
@@ -378,11 +378,10 @@ void setup() {
   operateMode = eEconderUse;
 
 //setup timer interrupt for stepper moto movements
-  TCNT1 = 65472;//65536-64;   // for 1 sec at 16 MHz	
-	TCCR1A = 0x00;
-	TCCR1B = (0<<CS10)|(1 << CS11)|(0<<CS12);  // Timer mode with 1024 prescler
-	TCCR1C = 0x00;
-  TIMSK1 = (1 << TOIE1) ;   // Enable timer1 overflow interrupt(TOIE1)
+  TCNT2 = 61440;//65536-4096   // for 1 sec at 16 MHz	
+	TCCR2A = 0x00;
+	TCCR2B = (0<<CS10)|(1 << CS11)|(0<<CS12);  // Timer mode with 1024 prescler
+  TIMSK2 = (1 << TOIE2) ;   // Enable timer1 overflow interrupt(TOIE1)
   sei();
 }
 
