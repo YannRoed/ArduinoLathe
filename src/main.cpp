@@ -378,14 +378,17 @@ void setup() {
   operateMode = eEconderUse;
 
 //setup timer interrupt for stepper moto movements
-  TCNT2 = 61440;//65536-4096   // for 1 sec at 16 MHz	
+/*   TCNT2 = 61440;//65536-4096   // for 1 sec at 16 MHz	
 	TCCR2A = 0x00;
 	TCCR2B = (0<<CS10)|(1 << CS11)|(0<<CS12);  // Timer mode with 1024 prescler
-  TIMSK2 = (1 << TOIE2) ;   // Enable timer1 overflow interrupt(TOIE1)
+  TIMSK2 = (1 << TOIE2) ;   // Enable timer1 overflow interrupt(TOIE1) */
   sei();
 }
 
 void loop() {
+  XStepper.doEvents();
+  YStepper.doEvents();
+  ZStepper.doEvents();
 
   //basicTest();
   //return;
